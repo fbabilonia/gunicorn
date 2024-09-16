@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -
 #
 # This file is part of gunicorn released under the MIT license.
 # See the NOTICE for more information.
@@ -11,7 +10,7 @@ try:
 except ImportError:
     raise RuntimeError("eventlet worker requires eventlet 0.24.1 or higher")
 else:
-    from pkg_resources import parse_version
+    from packaging.version import parse as parse_version
     if parse_version(eventlet.__version__) < parse_version('0.24.1'):
         raise RuntimeError("eventlet worker requires eventlet 0.24.1 or higher")
 
@@ -21,6 +20,7 @@ import eventlet.wsgi
 import greenlet
 
 from gunicorn.workers.base_async import AsyncWorker
+from gunicorn.sock import ssl_wrap_socket
 
 # ALREADY_HANDLED is removed in 0.30.3+ now it's `WSGI_LOCAL.already_handled: bool`
 # https://github.com/eventlet/eventlet/pull/544
@@ -64,7 +64,6 @@ def _eventlet_socket_sendfile(self, file, offset=0, count=None):
     finally:
         if total_sent > 0 and hasattr(file, 'seek'):
             file.seek(offset + total_sent)
-
 
 
 def _eventlet_serve(sock, handle, concurrency):
@@ -153,9 +152,7 @@ class EventletWorker(AsyncWorker):
 
     def handle(self, listener, client, addr):
         if self.cfg.is_ssl:
-            client = eventlet.wrap_ssl(client, server_side=True,
-                                       **self.cfg.ssl_options)
-
+            client = ssl_wrap_socket(client, self.cfg)
         super().handle(listener, client, addr)
 
     def run(self):
@@ -175,6 +172,7 @@ class EventletWorker(AsyncWorker):
             eventlet.sleep(1.0)
 
         self.notify()
+        t = None
         try:
             with eventlet.Timeout(self.cfg.graceful_timeout) as t:
                 for a in acceptors:
